@@ -1,6 +1,10 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
 
 use eframe::egui;
+use std::io::{Read, Write};
+use std::{env, fs::File, fs::OpenOptions};
+
+use serde::{Deserialize, Serialize};
 // use eframe::Theme;
 
 fn main() -> Result<(), eframe::Error> {
@@ -14,21 +18,21 @@ fn main() -> Result<(), eframe::Error> {
     eframe::run_native("Pvc", options, Box::new(|_cc| Box::<MyApp>::default()))
 }
 
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 enum PliseName {
     Klasik,
     Genis,
     Ince,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize, Copy)]
 enum ColorName {
     Beyaz,
     Boya,
     Ahsap,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 struct PliseType {
     name: PliseName,
     boya: ColorName,
@@ -62,18 +66,21 @@ impl PliseType {
     }
 }
 
+#[derive(Serialize, Deserialize)]
 struct Aluminyum {
     beyaz: f32,
     boya: f32,
     ahsap: f32,
 }
 
+#[derive(Serialize, Deserialize)]
 struct Kose {
     ince: f32,
     klasik: f32,
     genis: f32,
 }
 
+#[derive(Serialize, Deserialize)]
 struct Price {
     aluminyum: Aluminyum,
     tul: f32,
@@ -83,6 +90,8 @@ struct Price {
     klips: f32,
     stop: f32,
     donus: f32,
+    isci_maliyeti: f32,
+    kdv: f32,
 }
 
 impl Price {
@@ -104,7 +113,40 @@ impl Price {
             klips: 1.,
             stop: 1.,
             donus: 1.,
+            isci_maliyeti: 30.,
+            kdv: 20.,
         }
+    }
+
+    fn create_from_file() -> Self {
+        let mut exe_path = env::current_exe().unwrap();
+        exe_path.set_file_name("prices.json");
+
+        if !exe_path.exists() {
+            let mut file = File::create(&exe_path).unwrap();
+            file.write_all(serde_json::to_string(&Price::new()).unwrap().as_bytes())
+                .unwrap();
+        }
+
+        let mut file = File::open(&exe_path).unwrap();
+        let mut buffer = String::new();
+        file.read_to_string(&mut buffer).unwrap();
+        let data = serde_json::from_str(&buffer).unwrap();
+
+        data
+    }
+
+    fn to_file(&self) {
+        let mut exe_path = env::current_exe().unwrap();
+        exe_path.set_file_name("prices.json");
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(&exe_path)
+            .unwrap();
+        file.write_all(serde_json::to_string(&self).unwrap().as_bytes())
+            .unwrap();
     }
 }
 
@@ -147,7 +189,9 @@ fn calculate_single_price(width: u32, height: u32, plise_type: &PliseType, price
     let stop = if width < 150. { 2. } else { 4. } * price.stop;
     let donus = if width < 150. { 2. } else { 0. } * price.donus;
 
-    let sum = kasa + kanat + tul + serit + kose + teker + klips + stop + donus;
+    let mut sum = kasa + kanat + tul + serit + kose + teker + klips + stop + donus;
+    sum *= 1. + price.isci_maliyeti / 100.;
+    sum *= 1. + price.kdv / 100.;
 
     sum
 }
@@ -184,7 +228,7 @@ struct MyApp {
 
 impl Default for MyApp {
     fn default() -> Self {
-        let price = Price::new();
+        let price = Price::create_from_file();
 
         Self {
             item_count: 1,
@@ -195,8 +239,8 @@ impl Default for MyApp {
                 PliseType {
                     name: PliseName::Klasik,
                     boya: ColorName::Beyaz,
-                    kasa: 1.314,
-                    kanat: 2.070,
+                    kasa: 2.2,
+                    kanat: 2.4,
                 };
                 100
             ],
@@ -265,8 +309,10 @@ impl eframe::App for MyApp {
                                 ))
                                 .clicked()
                             {
-                                self.plise_types[i as usize] =
-                                    PliseType::new(PliseName::Ince, ColorName::Beyaz);
+                                self.plise_types[i as usize] = PliseType::new(
+                                    PliseName::Ince,
+                                    self.plise_types[i as usize].boya,
+                                );
                             }
                             if ui
                                 .add(egui::RadioButton::new(
@@ -278,8 +324,10 @@ impl eframe::App for MyApp {
                                 ))
                                 .clicked()
                             {
-                                self.plise_types[i as usize] =
-                                    PliseType::new(PliseName::Klasik, ColorName::Beyaz);
+                                self.plise_types[i as usize] = PliseType::new(
+                                    PliseName::Klasik,
+                                    self.plise_types[i as usize].boya,
+                                );
                             }
                             if ui
                                 .add(egui::RadioButton::new(
@@ -291,8 +339,10 @@ impl eframe::App for MyApp {
                                 ))
                                 .clicked()
                             {
-                                self.plise_types[i as usize] =
-                                    PliseType::new(PliseName::Genis, ColorName::Beyaz);
+                                self.plise_types[i as usize] = PliseType::new(
+                                    PliseName::Genis,
+                                    self.plise_types[i as usize].boya,
+                                );
                             }
 
                             if ui
@@ -342,7 +392,7 @@ impl eframe::App for MyApp {
                 self.item_count,
                 &self.price,
             );
-            ui.strong(format!("Maliyet: {}", calculated_price.ceil()));
+            ui.strong(format!("Maliyet: {:.2}", calculated_price));
         });
 
         if self.show_settings {
@@ -450,6 +500,25 @@ impl eframe::App for MyApp {
                                     .speed(0.1),
                             );
                         });
+
+                        ui.label("");
+                        ui.horizontal(|ui| {
+                            ui.label("İşci Maliyeti:");
+                            ui.add(
+                                egui::DragValue::new(&mut self.price.isci_maliyeti)
+                                    .clamp_range(0..=100)
+                                    .speed(0.1),
+                            );
+                            ui.label("Kdv:");
+                            ui.add(
+                                egui::DragValue::new(&mut self.price.kdv)
+                                    .clamp_range(0..=100)
+                                    .speed(0.1),
+                            );
+                        });
+                        if ui.button("Fiyatları Güncelle").clicked() {
+                            self.price.to_file();
+                        }
                     });
 
                     if ctx.input(|i| i.viewport().close_requested()) {
