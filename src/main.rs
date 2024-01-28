@@ -58,7 +58,6 @@ impl PliseType {
             PliseName::Ince => Self {
                 name,
                 boya,
-
                 kasa: 1.314,
                 kanat: 2.070,
             },
@@ -92,6 +91,7 @@ struct Price {
     donus: f32,
     isci_maliyeti: f32,
     kdv: f32,
+    kar: f32,
 }
 
 impl Price {
@@ -115,6 +115,7 @@ impl Price {
             donus: 1.,
             isci_maliyeti: 30.,
             kdv: 20.,
+            kar: 20.,
         }
     }
 
@@ -191,8 +192,6 @@ fn calculate_single_price(width: u32, height: u32, plise_type: &PliseType, price
 
     let mut sum = kasa + kanat + tul + serit + kose + teker + klips + stop + donus;
     sum *= 1. + price.isci_maliyeti / 100.;
-    sum *= 1. + price.kdv / 100.;
-
     sum
 }
 
@@ -202,11 +201,11 @@ fn calculate_prices(
     plise_types: &Vec<PliseType>,
     item_count: u32,
     price: &Price,
-) -> f32 {
-    let mut sum = 0.;
+) -> (f32, f32, f32) {
+    let mut maliyet = 0.;
 
     for i in 0..item_count {
-        sum += calculate_single_price(
+        maliyet += calculate_single_price(
             widths[i as usize],
             heights[i as usize],
             &plise_types[i as usize],
@@ -214,12 +213,17 @@ fn calculate_prices(
         );
     }
 
-    sum
+    let total_price = maliyet * (1. + price.kar / 100.);
+    let total_price_kdv = total_price * (1. + price.kdv / 100.);
+
+    (maliyet, total_price, total_price_kdv)
 }
 
 struct MyApp {
     item_count: u32,
     show_settings: bool,
+    show_maliyet: bool,
+    show_price: bool,
     widths: Vec<u32>,
     heights: Vec<u32>,
     plise_types: Vec<PliseType>,
@@ -233,6 +237,8 @@ impl Default for MyApp {
         Self {
             item_count: 1,
             show_settings: false,
+            show_maliyet: false,
+            show_price: false,
             widths: vec![40; 100],
             heights: vec![40; 100],
             plise_types: vec![
@@ -385,22 +391,85 @@ impl eframe::App for MyApp {
                         }
                     });
                 });
-            let calculated_price = calculate_prices(
-                &self.widths,
-                &self.heights,
-                &self.plise_types,
-                self.item_count,
-                &self.price,
-            );
-            ui.strong(format!("Maliyet: {:.2}", calculated_price));
+
+            if ui.button("Maliyet Göster").clicked() {
+                self.show_maliyet = true;
+            }
+            if ui.button("Fiyat Göster").clicked() {
+                self.show_price = true;
+            }
         });
+
+        if self.show_maliyet {
+            ctx.show_viewport_immediate(
+                egui::ViewportId::from_hash_of("maliyet_viewport"),
+                egui::ViewportBuilder::default()
+                    .with_title("Maliyet")
+                    .with_inner_size([500.0, 250.0]),
+                |ctx, class| {
+                    assert!(
+                        class == egui::ViewportClass::Immediate,
+                        "This egui backend doesn't support multiple viewports"
+                    );
+
+                    egui::CentralPanel::default().show(ctx, |ui| {
+                        let (maliyet, _, _) = calculate_prices(
+                            &self.widths,
+                            &self.heights,
+                            &self.plise_types,
+                            self.item_count,
+                            &self.price,
+                        );
+                        ui.strong(format!("Maliyet: {:.2}", maliyet));
+                    });
+                    if ctx.input(|i| i.viewport().close_requested()) {
+                        // Tell parent viewport that we should not show next frame:
+                        self.show_maliyet = false;
+                    }
+                },
+            );
+        }
+
+        if self.show_price {
+            ctx.show_viewport_immediate(
+                egui::ViewportId::from_hash_of("price_viewport"),
+                egui::ViewportBuilder::default()
+                    .with_title("Fiyat")
+                    .with_inner_size([500.0, 250.0]),
+                |ctx, class| {
+                    assert!(
+                        class == egui::ViewportClass::Immediate,
+                        "This egui backend doesn't support multiple viewports"
+                    );
+
+                    egui::CentralPanel::default().show(ctx, |ui| {
+                        let (_, total_price, total_price_kdv) = calculate_prices(
+                            &self.widths,
+                            &self.heights,
+                            &self.plise_types,
+                            self.item_count,
+                            &self.price,
+                        );
+                        ui.strong(format!("Fiyat: {:.2}", total_price));
+                        ui.strong(format!(
+                            "Fiyat (Kdv Dahil - %{:.0}): {:.2}",
+                            self.price.kdv, total_price_kdv
+                        ));
+                    });
+                    if ctx.input(|i| i.viewport().close_requested()) {
+                        // Tell parent viewport that we should not show next frame:
+                        self.show_price = false;
+                    }
+                },
+            );
+        }
 
         if self.show_settings {
             ctx.show_viewport_immediate(
-                egui::ViewportId::from_hash_of("immediate_viewport"),
+                egui::ViewportId::from_hash_of("settings_viewport"),
                 egui::ViewportBuilder::default()
                     .with_title("Fiyatlar Listesi")
-                    .with_inner_size([500.0, 250.0]),
+                    .with_inner_size([800.0, 400.0]),
                 |ctx, class| {
                     assert!(
                         class == egui::ViewportClass::Immediate,
@@ -421,9 +490,9 @@ impl eframe::App for MyApp {
                             ui.strong("Köşe Fiyatı");
                             ui.label("");
                             ui.end_row();
-                            ui.colored_label(egui::Color32::WHITE, "Beyaz");
-                            ui.colored_label(egui::Color32::GREEN, "Boyalı");
-                            ui.colored_label(egui::Color32::YELLOW, "Ahsap");
+                            ui.strong("Beyaz");
+                            ui.strong("Boyalı");
+                            ui.strong("Ahsap");
                             ui.strong("İnce");
                             ui.strong("Klasik");
                             ui.strong("Geniş");
@@ -506,6 +575,12 @@ impl eframe::App for MyApp {
                             ui.label("İşci Maliyeti:");
                             ui.add(
                                 egui::DragValue::new(&mut self.price.isci_maliyeti)
+                                    .clamp_range(0..=100)
+                                    .speed(0.1),
+                            );
+                            ui.label("Kar:");
+                            ui.add(
+                                egui::DragValue::new(&mut self.price.kar)
                                     .clamp_range(0..=100)
                                     .speed(0.1),
                             );
