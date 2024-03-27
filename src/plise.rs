@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Serialize, Deserialize, Copy, PartialEq)]
+#[derive(Clone, Serialize, Deserialize, Copy, PartialEq, Debug)]
 pub enum PliseName {
     Klasik,
     Genis,
@@ -60,17 +60,17 @@ impl PliseType {
     pub fn set_name(&mut self, name: PliseName) {
         match name {
             PliseName::Klasik => {
-                self.name = name;
+                self.name = PliseName::Klasik;
                 self.kasa_weight_times_six = 2.2;
                 self.kanat_weight_times_six = 2.4;
             }
             PliseName::Genis => {
-                self.name = name;
+                self.name = PliseName::Genis;
                 self.kasa_weight_times_six = 3.204;
                 self.kanat_weight_times_six = 2.4;
             }
             PliseName::Ince => {
-                self.name = name;
+                self.name = PliseName::Ince;
                 self.kasa_weight_times_six = 1.314;
                 self.kanat_weight_times_six = 2.070;
             }
