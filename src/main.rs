@@ -1,11 +1,17 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
 
+mod consumable;
+mod plise;
+
 use eframe::egui;
 use std::io::{Read, Write};
 use std::{env, fs::File, fs::OpenOptions};
 
 use serde::{Deserialize, Serialize};
 // use eframe::Theme;
+
+use consumable::Consumable;
+use plise::{ColorName, PliseName};
 
 fn main() -> Result<(), eframe::Error> {
     // env_logger::init(); // Log to stderr (if you run with `RUST_LOG=debug`).
@@ -18,114 +24,88 @@ fn main() -> Result<(), eframe::Error> {
     eframe::run_native("Pvc", options, Box::new(|_cc| Box::<MyApp>::default()))
 }
 
-#[derive(Clone, Serialize, Deserialize)]
-enum PliseName {
-    Klasik,
-    Genis,
-    Ince,
-}
-
-#[derive(Clone, Serialize, Deserialize, Copy)]
-enum ColorName {
-    Beyaz,
-    Boya,
-    Ahsap,
-}
-
-#[derive(Clone, Serialize, Deserialize)]
-struct PliseType {
-    name: PliseName,
-    boya: ColorName,
-    kasa: f32,
-    kanat: f32,
-}
-
-impl PliseType {
-    fn new(name: PliseName, boya: ColorName) -> Self {
-        match name {
-            PliseName::Klasik => Self {
-                name,
-                boya,
-                kasa: 2.2,
-                kanat: 2.4,
-            },
-            PliseName::Genis => Self {
-                name,
-                boya,
-                kasa: 3.204,
-                kanat: 2.4,
-            },
-            PliseName::Ince => Self {
-                name,
-                boya,
-                kasa: 1.314,
-                kanat: 2.070,
-            },
-        }
-    }
-}
-
+// Recrate Aluminyum so that every key has named (fiyat:f32, kar_fiyat:f32)
 #[derive(Serialize, Deserialize)]
-struct Aluminyum {
+struct ColorPrice {
     beyaz: f32,
     boya: f32,
     ahsap: f32,
 }
 
 #[derive(Serialize, Deserialize)]
-struct Kose {
-    ince: f32,
-    klasik: f32,
-    genis: f32,
+struct PlisePrice {
+    name: PliseName,
+    kar: f32,
+}
+
+impl PlisePrice {
+    fn new(name: PliseName) -> Self {
+        match name {
+            PliseName::Klasik => PlisePrice {
+                name: PliseName::Klasik,
+                kar: 20.,
+            },
+            PliseName::Genis => PlisePrice {
+                name: PliseName::Genis,
+                kar: 20.,
+            },
+            PliseName::Ince => PlisePrice {
+                name: PliseName::Ince,
+                kar: 20.,
+            },
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize)]
 struct Price {
-    aluminyum: Aluminyum,
-    tul: f32,
-    serit: f32,
-    kose: Kose,
-    teker: f32,
-    klips: f32,
-    stop: f32,
-    donus: f32,
+    plise_price: PlisePrice,
+    color_price: ColorPrice,
+    tul_price: f32,
+    serit_price: f32,
+    teker_price: f32,
+    klips_price: f32,
+    stop_price: f32,
+    donus_price: f32,
+    klasik_kose_price: f32,
+    genis_kose_price: f32,
+    ince_kose_price: f32,
     isci_maliyeti: f32,
     kdv: f32,
-    kar: f32,
 }
 
-impl Price {
-    fn new() -> Self {
+impl Default for Price {
+    fn default() -> Self {
         Price {
-            aluminyum: Aluminyum {
+            plise_price: PlisePrice::new(PliseName::Klasik),
+            color_price: ColorPrice {
                 beyaz: 120.,
                 boya: 130.,
                 ahsap: 140.,
             },
-            tul: 30.,
-            serit: 3.,
-            kose: Kose {
-                ince: 1.,
-                klasik: 1.,
-                genis: 4.5,
-            },
-            teker: 2.5,
-            klips: 1.,
-            stop: 1.,
-            donus: 1.,
+            tul_price: 30.,
+            serit_price: 3.,
+            teker_price: 2.5,
+            klips_price: 1.,
+            stop_price: 1.,
+            donus_price: 1.,
+            klasik_kose_price: 1.,
+            genis_kose_price: 1.,
+            ince_kose_price: 4.5,
             isci_maliyeti: 30.,
             kdv: 20.,
-            kar: 20.,
         }
     }
+}
 
+impl Price {
     fn create_from_file() -> Self {
         let mut exe_path = env::current_exe().unwrap();
         exe_path.set_file_name("prices.json");
 
         if !exe_path.exists() {
             let mut file = File::create(&exe_path).unwrap();
-            file.write_all(serde_json::to_string(&Price::new()).unwrap().as_bytes())
+            file.write_all(serde_json::to_string(&Price::default()).unwrap().as_bytes())
                 .unwrap();
         }
 
@@ -149,108 +129,89 @@ impl Price {
         file.write_all(serde_json::to_string(&self).unwrap().as_bytes())
             .unwrap();
     }
-}
 
-fn calculate_single_price(width: u32, height: u32, plise_type: &PliseType, price: &Price) -> f32 {
-    let width = width as f32;
-    let height = height as f32;
+    fn calculate_single_price(&self, consumable: &Consumable) -> f32 {
+        let alum_price = match consumable.get_plise_color() {
+            ColorName::Beyaz => self.color_price.beyaz,
+            ColorName::Boya => self.color_price.boya,
+            ColorName::Ahsap => self.color_price.ahsap,
+        };
 
-    let kasa_weight = plise_type.kasa / 6.;
-    let kanat_weight = plise_type.kanat / 6.;
+        let kose_price = match consumable.get_plise_name() {
+            PliseName::Klasik => self.klasik_kose_price,
+            PliseName::Genis => self.genis_kose_price,
+            PliseName::Ince => self.ince_kose_price,
+        };
 
-    let kose_price = match plise_type.name {
-        PliseName::Klasik => price.kose.klasik,
-        PliseName::Genis => price.kose.genis,
-        PliseName::Ince => price.kose.ince,
-    };
+        let kasa_maliyet = consumable.get_kasa_cm() * alum_price / 100.;
+        let kanat_maliyet = consumable.get_kanat_cm() * alum_price / 100.;
+        let tul_maliyet = consumable.get_tul_cm_squared() * self.tul_price / 10000.;
+        let serit_maliyet = consumable.get_serit_cm() * self.serit_price / 100.;
+        let kose_maliyet = consumable.get_kose_adet() * kose_price;
 
-    let alum_price = match plise_type.boya {
-        ColorName::Beyaz => price.aluminyum.beyaz,
-        ColorName::Boya => price.aluminyum.boya,
-        ColorName::Ahsap => price.aluminyum.ahsap,
-    } / 100.;
+        let teker_maliyet = consumable.get_teker_adet() * self.teker_price;
+        let klips_maliyet = consumable.get_klips_adet() * self.klips_price;
+        let stop_maliyet = consumable.get_stop_adet() * self.stop_price;
+        let donus_maliyet = consumable.get_donus_adet() * self.donus_price;
 
-    let kasa = (2. * (width + height - 5.) * kasa_weight) * alum_price;
-    let kanat = if width < 150. {
-        (height - 8.) * kanat_weight
-    } else {
-        2. * (height - 8.) * kanat_weight
-    } * alum_price;
+        let mut sum_maliyet = kasa_maliyet
+            + kanat_maliyet
+            + tul_maliyet
+            + serit_maliyet
+            + kose_maliyet
+            + teker_maliyet
+            + klips_maliyet
+            + stop_maliyet
+            + donus_maliyet;
 
-    let tul = width * height * price.tul / 10000.;
-    let serit = if width < 150. {
-        2. * (height - 5.)
-    } else {
-        4. * (height - 5.)
-    } * price.serit
-        / 100.;
-    let kose = 4. * kose_price;
-    let teker = if width < 150. { 2. } else { 4. } * price.teker;
-    let klips = if width < 150. { 4. } else { 8. } * price.klips;
-    let stop = if width < 150. { 2. } else { 4. } * price.stop;
-    let donus = if width < 150. { 2. } else { 0. } * price.donus;
-
-    let mut sum = kasa + kanat + tul + serit + kose + teker + klips + stop + donus;
-    sum *= 1. + price.isci_maliyeti / 100.;
-    sum
-}
-
-fn calculate_prices(
-    widths: &Vec<u32>,
-    heights: &Vec<u32>,
-    plise_types: &Vec<PliseType>,
-    item_count: u32,
-    price: &Price,
-) -> (f32, f32, f32) {
-    let mut maliyet = 0.;
-
-    for i in 0..item_count {
-        maliyet += calculate_single_price(
-            widths[i as usize],
-            heights[i as usize],
-            &plise_types[i as usize],
-            &price,
-        );
+        sum_maliyet *= 1. + self.isci_maliyeti / 100.;
+        sum_maliyet
     }
 
-    let total_price = maliyet * (1. + price.kar / 100.);
-    let total_price_kdv = total_price * (1. + price.kdv / 100.);
+    fn calculate_prices(&self, consumables: &Vec<Consumable>, item_count: u32) -> (f32, f32, f32) {
+        let mut maliyet = 0.;
 
-    (maliyet, total_price, total_price_kdv)
+        for i in 0..item_count {
+            maliyet += self.calculate_single_price(&consumables[i as usize]);
+        }
+
+        let total_price = maliyet * (1. + self.plise_price.kar / 100.);
+        let total_price_kdv = total_price * (1. + self.kdv / 100.);
+
+        (maliyet, total_price, total_price_kdv)
+    }
+}
+
+struct Visibility {
+    show_settings: bool,
+    show_maliyet: bool,
+    show_price: bool,
+}
+
+impl Visibility {
+    fn new() -> Self {
+        Self {
+            show_settings: false,
+            show_maliyet: false,
+            show_price: false,
+        }
+    }
 }
 
 struct MyApp {
     item_count: u32,
-    show_settings: bool,
-    show_maliyet: bool,
-    show_price: bool,
-    widths: Vec<u32>,
-    heights: Vec<u32>,
-    plise_types: Vec<PliseType>,
+    visibility: Visibility,
+    consumables: Vec<Consumable>,
     price: Price,
 }
 
 impl Default for MyApp {
     fn default() -> Self {
-        let price = Price::create_from_file();
-
         Self {
             item_count: 1,
-            show_settings: false,
-            show_maliyet: false,
-            show_price: false,
-            widths: vec![40; 100],
-            heights: vec![40; 100],
-            plise_types: vec![
-                PliseType {
-                    name: PliseName::Klasik,
-                    boya: ColorName::Beyaz,
-                    kasa: 2.2,
-                    kanat: 2.4,
-                };
-                100
-            ],
-            price,
+            visibility: Visibility::new(),
+            consumables: vec![Consumable::default(); 100],
+            price: Price::create_from_file(),
         }
     }
 }
@@ -265,7 +226,7 @@ impl eframe::App for MyApp {
         });
         egui::CentralPanel::default().show(ctx, |ui| {
             if ui.button("Ayarlar").clicked() {
-                self.show_settings = true;
+                self.visibility.show_settings = true;
             }
             ui.horizontal(|ui| {
                 ui.strong("Plise Adedi: ");
@@ -296,18 +257,18 @@ impl eframe::App for MyApp {
                         for i in 0..self.item_count {
                             ui.strong(format!("{}:", i + 1));
                             ui.add(
-                                egui::DragValue::new(&mut self.widths[i as usize])
+                                egui::DragValue::new(&mut self.consumables[i as usize].width)
                                     .clamp_range(0..=500)
                                     .suffix(" cm"),
                             );
                             ui.add(
-                                egui::DragValue::new(&mut self.heights[i as usize])
+                                egui::DragValue::new(&mut self.consumables[i as usize].height)
                                     .clamp_range(0..=500)
                                     .suffix(" cm"),
                             );
                             if ui
                                 .add(egui::RadioButton::new(
-                                    match self.plise_types[i as usize].name {
+                                    match self.consumables[i as usize].get_plise_name() {
                                         PliseName::Ince => true,
                                         _ => false,
                                     },
@@ -315,77 +276,54 @@ impl eframe::App for MyApp {
                                 ))
                                 .clicked()
                             {
-                                self.plise_types[i as usize] = PliseType::new(
-                                    PliseName::Ince,
-                                    self.plise_types[i as usize].boya,
-                                );
+                                self.consumables[i as usize].set_plise_name(PliseName::Ince);
                             }
                             if ui
                                 .add(egui::RadioButton::new(
-                                    match self.plise_types[i as usize].name {
-                                        PliseName::Klasik => true,
-                                        _ => false,
-                                    },
+                                    self.consumables[i as usize]
+                                        .check_plise_name(PliseName::Klasik),
                                     "Klasik",
                                 ))
                                 .clicked()
                             {
-                                self.plise_types[i as usize] = PliseType::new(
-                                    PliseName::Klasik,
-                                    self.plise_types[i as usize].boya,
-                                );
+                                self.consumables[i as usize].set_plise_name(PliseName::Klasik);
                             }
                             if ui
                                 .add(egui::RadioButton::new(
-                                    match self.plise_types[i as usize].name {
-                                        PliseName::Genis => true,
-                                        _ => false,
-                                    },
+                                    self.consumables[i as usize].check_plise_name(PliseName::Genis),
                                     "Genis",
                                 ))
                                 .clicked()
                             {
-                                self.plise_types[i as usize] = PliseType::new(
-                                    PliseName::Genis,
-                                    self.plise_types[i as usize].boya,
-                                );
+                                self.consumables[i as usize].set_plise_name(PliseName::Genis);
                             }
 
                             if ui
                                 .add(egui::RadioButton::new(
-                                    match self.plise_types[i as usize].boya {
-                                        ColorName::Beyaz => true,
-                                        _ => false,
-                                    },
+                                    self.consumables[i as usize].check_plise_color(ColorName::Beyaz),
                                     "Beyaz",
                                 ))
                                 .clicked()
                             {
-                                self.plise_types[i as usize].boya = ColorName::Beyaz;
+                                self.consumables[i as usize].set_plise_color(ColorName::Beyaz);
                             }
                             if ui
                                 .add(egui::RadioButton::new(
-                                    match self.plise_types[i as usize].boya {
-                                        ColorName::Boya => true,
-                                        _ => false,
-                                    },
+                                    self.consumables[i as usize].check_plise_color(ColorName::Boya),
                                     "Boyalı",
                                 ))
                                 .clicked()
                             {
-                                self.plise_types[i as usize].boya = ColorName::Boya;
+                                self.consumables[i as usize].set_plise_color(ColorName::Boya);
                             }
                             if ui
                                 .add(egui::RadioButton::new(
-                                    match self.plise_types[i as usize].boya {
-                                        ColorName::Ahsap => true,
-                                        _ => false,
-                                    },
+                                    self.consumables[i as usize].check_plise_color(ColorName::Ahsap),
                                     "Ahşap",
                                 ))
                                 .clicked()
                             {
-                                self.plise_types[i as usize].boya = ColorName::Ahsap;
+                                self.consumables[i as usize].set_plise_color(ColorName::Ahsap);
                             }
                             ui.end_row();
                         }
@@ -393,215 +331,223 @@ impl eframe::App for MyApp {
                 });
 
             if ui.button("Maliyet Göster").clicked() {
-                self.show_maliyet = true;
+                self.visibility.show_maliyet = true;
             }
             if ui.button("Fiyat Göster").clicked() {
-                self.show_price = true;
+                self.visibility.show_price = true;
             }
         });
 
-        if self.show_maliyet {
-            ctx.show_viewport_immediate(
-                egui::ViewportId::from_hash_of("maliyet_viewport"),
-                egui::ViewportBuilder::default()
-                    .with_title("Maliyet")
-                    .with_inner_size([500.0, 250.0]),
-                |ctx, class| {
-                    assert!(
-                        class == egui::ViewportClass::Immediate,
-                        "This egui backend doesn't support multiple viewports"
-                    );
-
-                    egui::CentralPanel::default().show(ctx, |ui| {
-                        let (maliyet, _, _) = calculate_prices(
-                            &self.widths,
-                            &self.heights,
-                            &self.plise_types,
-                            self.item_count,
-                            &self.price,
-                        );
-                        ui.strong(format!("Maliyet: {:.2}", maliyet));
-                    });
-                    if ctx.input(|i| i.viewport().close_requested()) {
-                        // Tell parent viewport that we should not show next frame:
-                        self.show_maliyet = false;
-                    }
-                },
-            );
+        if self.visibility.show_maliyet {
+            self.show_maliyet(ctx, _frame);
         }
 
-        if self.show_price {
-            ctx.show_viewport_immediate(
-                egui::ViewportId::from_hash_of("price_viewport"),
-                egui::ViewportBuilder::default()
-                    .with_title("Fiyat")
-                    .with_inner_size([500.0, 250.0]),
-                |ctx, class| {
-                    assert!(
-                        class == egui::ViewportClass::Immediate,
-                        "This egui backend doesn't support multiple viewports"
-                    );
-
-                    egui::CentralPanel::default().show(ctx, |ui| {
-                        let (_, total_price, total_price_kdv) = calculate_prices(
-                            &self.widths,
-                            &self.heights,
-                            &self.plise_types,
-                            self.item_count,
-                            &self.price,
-                        );
-                        ui.strong(format!("Fiyat: {:.2}", total_price));
-                        ui.strong(format!(
-                            "Fiyat (Kdv Dahil - %{:.0}): {:.2}",
-                            self.price.kdv, total_price_kdv
-                        ));
-                    });
-                    if ctx.input(|i| i.viewport().close_requested()) {
-                        // Tell parent viewport that we should not show next frame:
-                        self.show_price = false;
-                    }
-                },
-            );
+        if self.visibility.show_price {
+            self.show_price(ctx, _frame);
         }
 
-        if self.show_settings {
-            ctx.show_viewport_immediate(
-                egui::ViewportId::from_hash_of("settings_viewport"),
-                egui::ViewportBuilder::default()
-                    .with_title("Fiyatlar Listesi")
-                    .with_inner_size([800.0, 400.0]),
-                |ctx, class| {
-                    assert!(
-                        class == egui::ViewportClass::Immediate,
-                        "This egui backend doesn't support multiple viewports"
+        if self.visibility.show_settings {
+            self.show_settings(ctx, _frame);
+        }
+    }
+}
+
+impl MyApp {
+    fn show_maliyet(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        ctx.show_viewport_immediate(
+            egui::ViewportId::from_hash_of("maliyet_viewport"),
+            egui::ViewportBuilder::default()
+                .with_title("Maliyet")
+                .with_inner_size([500.0, 250.0]),
+            |ctx, class| {
+                assert!(
+                    class == egui::ViewportClass::Immediate,
+                    "This egui backend doesn't support multiple viewports"
+                );
+
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    let (maliyet, _, _) = self.price.calculate_prices(
+                        &self.consumables,
+                        self.item_count,
                     );
+                    ui.strong(format!("Maliyet: {:.2}", maliyet));
+                });
+                if ctx.input(|i| i.viewport().close_requested()) {
+                    // Tell parent viewport that we should not show next frame:
+                    self.visibility.show_maliyet = false;
+                }
+            },
+        );
+    }
 
-                    egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
-                        ui.centered_and_justified(|ui| {
-                            ui.heading("Fiyatlar");
-                        });
+    fn show_price(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        ctx.show_viewport_immediate(
+            egui::ViewportId::from_hash_of("price_viewport"),
+            egui::ViewportBuilder::default()
+                .with_title("Fiyat")
+                .with_inner_size([500.0, 250.0]),
+            |ctx, class| {
+                assert!(
+                    class == egui::ViewportClass::Immediate,
+                    "This egui backend doesn't support multiple viewports"
+                );
+
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    let (_, total_price, total_price_kdv) = self.price.calculate_prices(
+                        &self.consumables,
+                        self.item_count,
+                    );
+                    ui.strong(format!("Fiyat: {:.2}", total_price));
+                    ui.strong(format!(
+                        "Fiyat (Kdv Dahil - %{:.0}): {:.2}",
+                        self.price.kdv, total_price_kdv
+                    ));
+                });
+                if ctx.input(|i| i.viewport().close_requested()) {
+                    // Tell parent viewport that we should not show next frame:
+                    self.visibility.show_price = false;
+                }
+            },
+        );
+    }
+
+    fn show_settings(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        ctx.show_viewport_immediate(
+            egui::ViewportId::from_hash_of("settings_viewport"),
+            egui::ViewportBuilder::default()
+                .with_title("Fiyatlar Listesi")
+                .with_inner_size([500.0, 250.0]),
+            |ctx, class| {
+                assert!(
+                    class == egui::ViewportClass::Immediate,
+                    "This egui backend doesn't support multiple viewports"
+                );
+
+                egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
+                    ui.centered_and_justified(|ui| {
+                        ui.heading("Fiyatlar");
                     });
-                    egui::CentralPanel::default().show(ctx, |ui| {
-                        egui::Grid::new("grid").min_col_width(70.).show(ui, |ui| {
-                            ui.label("");
-                            ui.strong("Boya Fiyatı");
-                            ui.label("");
-                            ui.label("");
-                            ui.strong("Köşe Fiyatı");
-                            ui.label("");
-                            ui.end_row();
-                            ui.strong("Beyaz");
-                            ui.strong("Boyalı");
-                            ui.strong("Ahsap");
-                            ui.strong("İnce");
-                            ui.strong("Klasik");
-                            ui.strong("Geniş");
-                            ui.end_row();
-
-                            ui.add(
-                                egui::DragValue::new(&mut self.price.aluminyum.beyaz)
-                                    .clamp_range(0..=10000),
-                            );
-                            ui.add(
-                                egui::DragValue::new(&mut self.price.aluminyum.boya)
-                                    .clamp_range(0..=10000),
-                            );
-                            ui.add(
-                                egui::DragValue::new(&mut self.price.aluminyum.ahsap)
-                                    .clamp_range(0..=10000),
-                            );
-
-                            ui.add(
-                                egui::DragValue::new(&mut self.price.kose.ince)
-                                    .clamp_range(0..=100)
-                                    .speed(0.1),
-                            );
-                            ui.add(
-                                egui::DragValue::new(&mut self.price.kose.klasik)
-                                    .clamp_range(0..=100)
-                                    .speed(0.1),
-                            );
-                            ui.add(
-                                egui::DragValue::new(&mut self.price.kose.genis)
-                                    .clamp_range(0..=100)
-                                    .speed(0.1),
-                            );
-                            ui.end_row();
-                            ui.end_row();
-
-                            ui.strong("Tul");
-                            ui.strong("Şerit");
-                            ui.strong("Teker");
-                            ui.strong("Klips");
-                            ui.strong("Stop");
-                            ui.strong("Dönüş");
-                            ui.end_row();
-
-                            ui.add(
-                                egui::DragValue::new(&mut self.price.tul)
-                                    .clamp_range(0..=1000)
-                                    .speed(0.2),
-                            );
-                            ui.add(
-                                egui::DragValue::new(&mut self.price.serit)
-                                    .clamp_range(0..=100)
-                                    .speed(0.1),
-                            );
-                            ui.add(
-                                egui::DragValue::new(&mut self.price.teker)
-                                    .clamp_range(0..=100)
-                                    .speed(0.1),
-                            );
-
-                            ui.add(
-                                egui::DragValue::new(&mut self.price.klips)
-                                    .clamp_range(0..=100)
-                                    .speed(0.1),
-                            );
-                            ui.add(
-                                egui::DragValue::new(&mut self.price.stop)
-                                    .clamp_range(0..=100)
-                                    .speed(0.1),
-                            );
-                            ui.add(
-                                egui::DragValue::new(&mut self.price.donus)
-                                    .clamp_range(0..=100)
-                                    .speed(0.1),
-                            );
-                        });
-
+                });
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    egui::Grid::new("grid").min_col_width(70.).show(ui, |ui| {
                         ui.label("");
-                        ui.horizontal(|ui| {
-                            ui.label("İşci Maliyeti:");
-                            ui.add(
-                                egui::DragValue::new(&mut self.price.isci_maliyeti)
-                                    .clamp_range(0..=100)
-                                    .speed(0.1),
-                            );
-                            ui.label("Kar:");
-                            ui.add(
-                                egui::DragValue::new(&mut self.price.kar)
-                                    .clamp_range(0..=100)
-                                    .speed(0.1),
-                            );
-                            ui.label("Kdv:");
-                            ui.add(
-                                egui::DragValue::new(&mut self.price.kdv)
-                                    .clamp_range(0..=100)
-                                    .speed(0.1),
-                            );
-                        });
-                        if ui.button("Fiyatları Güncelle").clicked() {
-                            self.price.to_file();
-                        }
+                        ui.strong("Boya Fiyatı");
+                        ui.label("");
+                        ui.label("");
+                        ui.strong("Köşe Fiyatı");
+                        ui.label("");
+                        ui.end_row();
+                        ui.strong("Beyaz");
+                        ui.strong("Boyalı");
+                        ui.strong("Ahsap");
+                        ui.strong("İnce");
+                        ui.strong("Klasik");
+                        ui.strong("Geniş");
+                        ui.end_row();
+
+                        ui.add(
+                            egui::DragValue::new(&mut self.price.color_price.beyaz)
+                                .clamp_range(0..=10000),
+                        );
+                        ui.add(
+                            egui::DragValue::new(&mut self.price.color_price.boya)
+                                .clamp_range(0..=10000),
+                        );
+                        ui.add(
+                            egui::DragValue::new(&mut self.price.color_price.ahsap)
+                                .clamp_range(0..=10000),
+                        );
+
+                        ui.add(
+                            egui::DragValue::new(&mut self.price.ince_kose_price)
+                                .clamp_range(0..=100)
+                                .speed(0.1),
+                        );
+                        ui.add(
+                            egui::DragValue::new(&mut self.price.klasik_kose_price)
+                                .clamp_range(0..=100)
+                                .speed(0.1),
+                        );
+                        ui.add(
+                            egui::DragValue::new(&mut self.price.genis_kose_price)
+                                .clamp_range(0..=100)
+                                .speed(0.1),
+                        );
+                        ui.end_row();
+                        ui.end_row();
+
+                        ui.strong("Tul");
+                        ui.strong("Şerit");
+                        ui.strong("Teker");
+                        ui.strong("Klips");
+                        ui.strong("Stop");
+                        ui.strong("Dönüş");
+                        ui.end_row();
+
+                        ui.add(
+                            egui::DragValue::new(&mut self.price.tul_price)
+                                .clamp_range(0..=1000)
+                                .speed(0.2),
+                        );
+                        ui.add(
+                            egui::DragValue::new(&mut self.price.serit_price)
+                                .clamp_range(0..=100)
+                                .speed(0.1),
+                        );
+                        ui.add(
+                            egui::DragValue::new(&mut self.price.teker_price)
+                                .clamp_range(0..=100)
+                                .speed(0.1),
+                        );
+
+                        ui.add(
+                            egui::DragValue::new(&mut self.price.klips_price)
+                                .clamp_range(0..=100)
+                                .speed(0.1),
+                        );
+                        ui.add(
+                            egui::DragValue::new(&mut self.price.stop_price)
+                                .clamp_range(0..=100)
+                                .speed(0.1),
+                        );
+                        ui.add(
+                            egui::DragValue::new(&mut self.price.donus_price)
+                                .clamp_range(0..=100)
+                                .speed(0.1),
+                        );
                     });
 
-                    if ctx.input(|i| i.viewport().close_requested()) {
-                        // Tell parent viewport that we should not show next frame:
-                        self.show_settings = false;
+                    ui.label("");
+                    ui.horizontal(|ui| {
+                        ui.label("İşci Maliyeti:");
+                        ui.add(
+                            egui::DragValue::new(&mut self.price.isci_maliyeti)
+                                .clamp_range(0..=100)
+                                .speed(0.1),
+                        );
+                        ui.label("Kar:");
+                        ui.add(
+                            egui::DragValue::new(&mut self.price.plise_price.kar)
+                                .clamp_range(0..=100)
+                                .speed(0.1),
+                        );
+                        ui.label("Kdv:");
+                        ui.add(
+                            egui::DragValue::new(&mut self.price.kdv)
+                                .clamp_range(0..=100)
+                                .speed(0.1),
+                        );
+                    });
+                    if ui.button("Fiyatları Güncelle").clicked() {
+                        self.price.to_file();
                     }
-                },
-            );
-        }
+                });
+
+                if ctx.input(|i| i.viewport().close_requested()) {
+                    // Tell parent viewport that we should not show next frame:
+                    self.visibility.show_settings = false;
+                }
+            },
+        );
     }
 }
