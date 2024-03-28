@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
 
 mod consumable;
+mod html;
 mod plise;
 mod price;
 
@@ -9,6 +10,7 @@ use eframe::egui;
 // use eframe::Theme;
 
 use consumable::Consumable;
+use html::Html;
 use plise::{ColorName, PliseName};
 use price::Price;
 
@@ -224,6 +226,21 @@ impl MyApp {
                     ui.label("");
                     ui.strong(format!("Maliyet: {:.2}", maliyet));
                     ui.label("");
+                    if ui.button("Yazdır").clicked() {
+                        let mut html_content = String::new();
+                        self.consumables
+                            .iter()
+                            .take(self.item_count as usize)
+                            .enumerate()
+                            .for_each(|c| {
+                                html_content =
+                                    format!("{}{}", html_content, c.1.generate_html_table(c.0+1));
+                            });
+
+                        Html::create_consumables_html(&html_content, maliyet, "Kamil");
+                        self.visibility.show_maliyet = false;
+                    }
+                    ui.label("");
                     if ui.button("Kapat").clicked() {
                         self.visibility.show_maliyet = false;
                     }
@@ -267,6 +284,21 @@ impl MyApp {
                         "Fiyat (Kdv Dahil - %{:.0}): {:.2}",
                         self.price.kdv, total_price_kdv
                     ));
+                    ui.label("");
+                    if ui.button("Yazdır").clicked() {
+                        let mut html_content = String::new();
+                        self.consumables
+                            .iter()
+                            .take(self.item_count as usize)
+                            .enumerate()
+                            .for_each(|c| {
+                                html_content =
+                                    format!("{}{}", html_content, c.1.generate_wh_html_table(c.0+1));
+                            });
+
+                        Html::create_price_html(&html_content, total_price, self.price.kdv, "Kamil");
+                        self.visibility.show_price = false;
+                    }
                     ui.label("");
                     if ui.button("Kapat").clicked() {
                         self.visibility.show_price = false;
