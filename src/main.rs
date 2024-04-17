@@ -43,6 +43,7 @@ impl Visibility {
 
 struct MyApp {
     item_count: u32,
+    client_name: String,
     visibility: Visibility,
     consumables: Vec<Consumable>,
     price: Price,
@@ -52,6 +53,7 @@ impl Default for MyApp {
     fn default() -> Self {
         Self {
             item_count: 1,
+            client_name: "".to_string(),
             visibility: Visibility::new(),
             consumables: vec![Consumable::default(); 100],
             price: Price::create_from_file(),
@@ -226,7 +228,13 @@ impl MyApp {
                     ui.label("");
                     ui.strong(format!("Maliyet: {:.2}", maliyet));
                     ui.label("");
-                    if ui.button("Yazdır").clicked() {
+                    ui.horizontal(|ui| {
+                        ui.strong("Müşteri Adını Giriniz:");
+                        ui.text_edit_singleline(&mut self.client_name);
+                    });
+                    ui.label("");
+
+                    if ui.button("Sarf Tablosunu Yazdır").clicked() {
                         let mut html_content = String::new();
                         self.consumables
                             .iter()
@@ -237,7 +245,7 @@ impl MyApp {
                                     format!("{}{}", html_content, c.1.generate_html_table(c.0+1));
                             });
 
-                        Html::create_consumables_html(&html_content, maliyet, "Kamil");
+                        Html::create_consumables_html(&html_content, maliyet, &self.client_name);
                         self.visibility.show_maliyet = false;
                     }
                     ui.label("");
@@ -285,7 +293,12 @@ impl MyApp {
                         self.price.kdv, total_price_kdv
                     ));
                     ui.label("");
-                    if ui.button("Yazdır").clicked() {
+                    ui.horizontal(|ui| {
+                        ui.strong("Müşteri Adını Giriniz:");
+                        ui.text_edit_singleline(&mut self.client_name);
+                    });
+                    ui.label("");
+                    if ui.button("Fiyat Yazdır").clicked() {
                         let mut html_content = String::new();
                         self.consumables
                             .iter()
@@ -296,7 +309,7 @@ impl MyApp {
                                     format!("{}{}", html_content, c.1.generate_wh_html_table(c.0+1));
                             });
 
-                        Html::create_price_html(&html_content, total_price, self.price.kdv, "Kamil");
+                        Html::create_price_html(&html_content, total_price, self.price.kdv, &self.client_name);
                         self.visibility.show_price = false;
                     }
                     ui.label("");
